@@ -1,4 +1,4 @@
-# Digital lock-in. Initial area request only; NOT confirmed to fit.
+# Digital lock-in. RTL refactored specifically for a 1x1 IHP tile.
 project:
   title: "Digital IQ Lock-in (IEEE)"
   author: "Gabriela Sheilyn Ticona Jimenez"
@@ -6,7 +6,7 @@ project:
   description: "Dual-phase digital demodulator with programmable block averaging — Equipo Triada CEG"
   language: "Verilog"
   clock_hz: 50000000
-  # Keep initial template area; change only after reviewing IHP implementation reports.
+  # Fixed allocation for TTIHP26b. Keep at 1x1 and optimize RTL instead.
   tiles: "1x1"
   top_module: "tt_um_gstj_lockin"
   source_files:

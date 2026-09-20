@@ -76,6 +76,13 @@ class Bus:
         words = [b[0] | b[1] << 8, b[2] | b[3] << 8]
         return tuple(x if x < 32768 else x - 65536 for x in words)
 
+    async def wait_idle(self, limit=64):
+        for _ in range(limit):
+            if not (int(self.d.uio_out.value) & 64):
+                return
+            await self.cycle()
+        raise AssertionError("busy did not clear")
+
     async def sample(self, x, gap=0):
         assert not (int(self.d.uio_out.value) & 64), "busy before sample"
         self.d.ui_in.value = x & 255
@@ -83,7 +90,9 @@ class Bus:
         await self.cycle()
         assert int(self.d.uio_out.value) & 64
         self.d.uio_in.value = 0
-        await self.cycle(3 + gap)
+        await self.wait_idle()
+        if gap:
+            await self.cycle(gap)
         assert not (int(self.d.uio_out.value) & 64)
 
     async def configure(self, step, sel):
@@ -125,13 +134,17 @@ async def protocol_and_reset(d):
     # Sustained strobe accepts only one sample.
     d.ui_in.value=10; d.uio_in.value=1
     await b.cycle(10)
-    d.uio_in.value=0; await b.cycle()
+    d.uio_in.value=0
+    await b.wait_idle()
     for _ in range(15): await b.sample(10)
     assert await b.snapshot() == (1270,0)
-    # Snapshot retained when a new live result arrives.
+    # Readback registers auto-update atomically as a completed pair; snapshot
+    # strobe is now only the NEW_RESULT acknowledge.
     for _ in range(16): await b.sample(20)
-    assert await b.read_pair() == (1270,0)
+    assert await b.read_pair() == (2540,0)
+    assert int(d.uio_out.value) & 128
     assert await b.snapshot() == (2540,0)
+    assert not (int(d.uio_out.value) & 128)
     # Trigger during busy is rejected and flagged.
     d.ui_in.value=50; d.uio_in.value=1; await b.cycle()
     d.uio_in.value=0; await b.cycle()
