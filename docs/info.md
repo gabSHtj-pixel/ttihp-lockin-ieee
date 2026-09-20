@@ -1,20 +1,46 @@
-<!---
-
-This file is used to generate your project datasheet. Please fill in the information below and delete any unused
-sections.
-
-You can also include images in this folder and reference them in the markdown. Each image must be less than
-512 kb in size, and the combined size of all images must be less than 1 MB.
--->
-
 ## How it works
 
-Explain how your project works
+Digital dual-phase (I/Q) lock-in amplifier / demodulator with programmable block averaging:
+
+1. **`reference_generator`**: a 16-bit phase accumulator drives a 32-entry sine lookup table
+   (8-bit signed), producing quadrature reference signals `ref_i` (cosine) and `ref_q` (sine).
+   The phase only advances when the core actually accepts a new sample (`advance`), so the
+   reference frequency is expressed as phase-per-sample, not phase-per-clock.
+2. **`lockin_core`**: for every accepted sample, a single reused multiplier computes
+   `sample * ref_i` then `sample * ref_q` over two internal states (`MIX_I`, `MIX_Q`), and
+   accumulates both products into 26-bit running sums. After the configured block size
+   (16 / 64 / 256 / 1024 samples, selected by `window_sel`), the accumulated sums are
+   right-shifted (block-average) and latched as the signed 16-bit result `result_i`/`result_q`,
+   raising `result_valid` for one cycle.
+3. **`register_interface`**: a synchronous, strobe-based register file (addresses 0-7) exposes
+   configuration (phase step, window size), a snapshot mechanism to atomically read back the
+   latest I/Q result without tearing, and status flags (`busy`, `new_result`, `overrun`).
 
 ## How to test
 
-Explain how to use your project
+All access is through the 8-bit `DATA_IN`/`READ_DATA` bus plus dedicated strobes on the
+bidirectional pins, sampled synchronously to `clk` (one strobe edge recognized per clock, not an
+SPI/I2C protocol):
+
+- **Configure**: write `phase_step` (registers `4`/`5`, low/high byte) and `window_sel`
+  (register `6`, 0-3) using `WRITE_STROBE` with `ADDR` set to the target register and `DATA_IN`
+  holding the byte.
+- **Feed samples**: drive `DATA_IN` with a signed 8-bit sample and pulse `SAMPLE_STROBE` for one
+  cycle. `BUSY` goes high while the sample is being mixed (a few clocks) and must be low before
+  the next sample is accepted.
+- **Read a result**: once a full block has been averaged, `NEW_RESULT` goes high. Pulse
+  `SNAPSHOT_STROBE` to atomically latch the current `result_i`/`result_q` into the read-back
+  registers (this also clears `NEW_RESULT`), then read the four bytes at addresses `0`-`3`
+  (`snapshot_i[7:0]`, `snapshot_i[15:8]`, `snapshot_q[7:0]`, `snapshot_q[15:8]`).
+- **Status**: register `7` reports `{overrun, new_result, busy}`; writing bit `0` to register `7`
+  clears `overrun`/`new_result`.
+
+`test/test.py` cross-checks the RTL against an independent Python integer reference model across
+all four window sizes and several reference frequencies (including phase wrap-around), exercises
+the register protocol and edge cases (reset mid-block, reconfiguration while busy, sample
+overruns, `ena` gating), and validates amplitude/phase recovery against a noisy synthetic input
+signal with third-harmonic interference.
 
 ## External hardware
 
-List external hardware used in your project (e.g. PMOD, LED display, etc), if any
+None - this project only exercises the dedicated and bidirectional I/O pins directly.
