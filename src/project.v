@@ -8,6 +8,8 @@ module tt_um_gstj_lockin (
     output wire [7:0] uio_oe,
     input wire ena, clk, rst_n
 );
+    wire signed [7:0] sample_signed;
+    assign sample_signed = ui_in;    
     wire [15:0] phase_step;
     wire [1:0] window_sel;
     wire sample_valid, clear, busy, accepted, result_valid, new_result;
@@ -19,7 +21,7 @@ module tt_um_gstj_lockin (
     );
     lockin_core core (
         .clk(clk), .rst_n(rst_n), .clear(clear), .enable(ena),
-        .sample_valid(sample_valid), .sample($signed(ui_in)),
+        .sample_valid(sample_valid), .sample(sample_signed),
         .ref_i(ref_i), .ref_q(ref_q), .window_sel(window_sel),
         .busy(busy), .accepted(accepted),
         .result_i(result_i), .result_q(result_q), .result_valid(result_valid)
